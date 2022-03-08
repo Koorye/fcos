@@ -32,19 +32,19 @@ class FPN(nn.Module):
         self.up2 = nn.Upsample(scale_factor=2)
 
         self.down1 = nn.Sequential(
-            nn.Conv2d(512,512,1),
-            nn.Conv2d(512,512,3,stride=2,padding=1),
-            nn.Conv2d(512,512,1),
+            nn.Conv2d(256,256,1),
+            nn.Conv2d(256,256,3,stride=2,padding=1),
+            nn.Conv2d(256,256,1),
         )
         self.down2 = nn.Sequential(
-            nn.Conv2d(512,512,1),
-            nn.Conv2d(512,512,3,stride=2,padding=1),
-            nn.Conv2d(512,512,1),
+            nn.Conv2d(256,256,1),
+            nn.Conv2d(256,256,3,stride=2,padding=1),
+            nn.Conv2d(256,256,1),
         )
 
-        self.trans1 = nn.Conv2d(512*4, 256, 1)
-        self.trans2 = nn.Conv2d(512*2, 256, 1)
-        self.trans3 = nn.Conv2d(512*1, 256, 1)
+        self.trans1 = nn.Conv2d(2048, 256, 1)
+        self.trans2 = nn.Conv2d(1024, 256, 1)
+        self.trans3 = nn.Conv2d(512, 256, 1)
 
         self.smooth1 = nn.Conv2d(256,256,1)
         self.smooth2 = nn.Conv2d(256,256,1)

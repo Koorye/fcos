@@ -16,6 +16,17 @@ class VOCDataset(Dataset):
 
         self.size = (800, 1024)
 
+        self.trans = T.Compose([
+            T.Resize(self.size),
+            T.ToTensor(),
+            T.Normalize([.485, .456, .406], [.229, .224, .225]),
+        ])
+        
+        self.untrans = T.Compose([
+            T.Normalize([-.485/.229, -.456/.224, -.406/.225], [1/.229, 1/.224, 1/.225]),
+            T.ToPILImage(),
+        ])
+
     def __len__(self):
         return len(self.base)
 
@@ -62,7 +73,7 @@ class VOCDataset(Dataset):
         """
 
         w_origin, h_origin = img.size
-        img = T.Resize(self.size)(img)
+        img = self.trans(img)
         h, w = self.size
         for ind, box in enumerate(boxes):
             boxes[ind] = (box[0],
@@ -139,6 +150,7 @@ if __name__ == '__main__':
                                         image_set='train',
                                         download=False))
     img, loc_maps, center_maps, cls_maps = train_set[0]
+    img = train_set.untrans(img)
 
     for i in [0,2,4]:
         plt.subplot(3,4,1)
