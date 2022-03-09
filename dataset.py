@@ -8,11 +8,25 @@ from cfg import classes
 
 
 class VOCDataset(Dataset):
-    def __init__(self, base, scales=(8, 16, 32, 64, 128)):
+    def __init__(self, 
+                 base, 
+                 scales=(8, 16, 32, 64, 128), 
+                 m=(0, 64, 128, 256, 512, np.inf), 
+                 radius=2,
+                 multi_scale=True,
+                 center_sampling=True):
+        """
+        
+        """
         super().__init__()
 
         self.base = base
         self.scales = scales
+        self.m = m
+        self.radius = radius
+
+        self.multi_scale = multi_scale
+        self.center_sampling = center_sampling
 
         self.size = (800, 1024)
 
@@ -21,10 +35,10 @@ class VOCDataset(Dataset):
             T.ToTensor(),
             T.Normalize([.485, .456, .406], [.229, .224, .225]),
         ])
-        
+
         self.untrans = T.Compose([
-            T.Normalize([-.485/.229, -.456/.224, -.406/.225], [1/.229, 1/.224, 1/.225]),
-            T.ToPILImage(),
+            T.Normalize([-.485/.229, -.456/.224, -.406/.225],
+                        [1/.229, 1/.224, 1/.225]),
         ])
 
     def __len__(self):
@@ -37,14 +51,15 @@ class VOCDataset(Dataset):
         img, boxes = self._resize_and_sort(img, boxes)
 
         loc_maps, center_maps, cls_maps = [], [], []
-        for scale in self.scales:
+        for idx, scale in enumerate(self.scales):
             # 将x,y根据sclae重置尺寸并取整
             # (n_boxes,5)
             boxes_ = np.array(boxes)
-            boxes_[:,1:] = boxes_[:,1:] / scale
+            boxes_[:, 1:] = boxes_[:, 1:] / scale
             boxes_ = boxes_.astype(int)
 
-            loc_map, center_map, cls_map = self._gen_heatmap(boxes_, scale)
+            loc_map, center_map, cls_map = self._gen_heatmap(
+                boxes_, scale, self.m[idx], self.m[idx+1], self.radius)
             loc_maps.append(loc_map)
             center_maps.append(center_map)
             cls_maps.append(cls_map)
@@ -77,15 +92,15 @@ class VOCDataset(Dataset):
         h, w = self.size
         for ind, box in enumerate(boxes):
             boxes[ind] = (box[0],
-                          int(box[1]*w/w_origin),
-                          int(box[2]*h/h_origin),
-                          int(box[3]*w/w_origin),
-                          int(box[4]*h/h_origin))
+                          box[1]*w/w_origin,
+                          box[2]*h/h_origin,
+                          box[3]*w/w_origin,
+                          box[4]*h/h_origin)
         boxes.sort(key=lambda x: x[3]*x[4])
         return img, boxes
 
-    def _gen_heatmap(self, boxes, scale):
-        h, w = (np.array(self.size) / scale).astype(int)
+    def _gen_heatmap(self, boxes, scale, m_lb, m_ub, radius):
+        h, w = np.ceil(np.array(self.size) / scale).astype(int)
 
         loc_map = np.zeros((4, h, w)).astype(float)
         center_map = np.zeros((h, w)).astype(float)
@@ -103,16 +118,6 @@ class VOCDataset(Dataset):
             tmp_mask = np.zeros((h, w)).astype(int)
             tmp_mask[ymin:ymax+1, xmin:xmax+1] = 1
 
-            # 只保留总mask中还没被其余box覆盖过的位置
-            # 由于box面积从小到大排序
-            # 面积更小的box将优先被分配特征信息
-            tmp_mask = np.where(tmp_mask > all_mask, 1, 0)
-
-            # 将当前box加入总mask中
-            all_mask[ymin:ymax+1, xmin:xmax+1] = 1
-
-            cls_map[cls, :, :] += tmp_mask.copy()
-
             # 计算mask内的锚点相对于left/top/right/bottom的距离
             l = x - xmin
             t = y - ymin
@@ -122,6 +127,33 @@ class VOCDataset(Dataset):
             t[t < 0] = 0
             r[r < 0] = 0
             b[b < 0] = 0
+            l *= tmp_mask
+            t *= tmp_mask
+            r *= tmp_mask
+            b *= tmp_mask
+
+            # 保留最大距离在允许范围内的锚点
+            if self.multi_scale:
+                dist = np.max(np.stack([l, t, r, b]), 0) * scale
+                tmp_mask = np.where((m_lb <= dist) & (dist <= m_ub), 1, 0)
+
+            # 中心采样
+            if self.center_sampling:
+                center_mask = np.zeros((h,w)).astype(int)
+                xc, yc = int((xmin + xmax) / 2), int((ymin + ymax) / 2)
+                center_mask[yc-radius:yc+radius+1, xc-radius:xc+radius+1] = 1
+                tmp_mask *= center_mask
+
+            # 只保留总mask中还没被其余box覆盖过的位置
+            # 由于box面积从小到大排序
+            # 面积更小的box将优先被分配特征信息
+            tmp_mask = np.where(tmp_mask > all_mask, 1, 0)
+
+            # 将当前box加入总mask中
+            all_mask += tmp_mask
+
+            cls_map[cls, :, :] += tmp_mask.copy()
+
             loc_map[0, :, :] += l * tmp_mask
             loc_map[1, :, :] += t * tmp_mask
             loc_map[2, :, :] += r * tmp_mask
@@ -133,10 +165,11 @@ class VOCDataset(Dataset):
             inv_max_lr = np.where(l > r, 1/(l+1e-8), 1/(r+1e-8))
             min_tb = np.where(t > b, b, t)
             inv_max_tb = np.where(t > b, 1/(t+1e-8), 1/(b+1e-8))
-            center_map += np.sqrt(min_lr*inv_max_lr*min_tb*inv_max_tb)
+            center_map += np.sqrt(min_lr*inv_max_lr *
+                                  min_tb*inv_max_tb) * tmp_mask
 
         loc_map = torch.Tensor(loc_map)
-        center_map = torch.Tensor(center_map)
+        center_map = torch.Tensor(center_map).clamp(0.,1.)
         cls_map = torch.Tensor(cls_map)
 
         return loc_map, center_map, cls_map
@@ -151,30 +184,31 @@ if __name__ == '__main__':
                                         download=False))
     img, loc_maps, center_maps, cls_maps = train_set[0]
     img = train_set.untrans(img)
+    img = T.ToPILImage()(img)
 
-    for i in [0,2,4]:
-        plt.subplot(3,4,1)
+    for i in range(5):
+        plt.subplot(3, 4, 1)
         plt.title('Image')
         plt.imshow(img)
 
-        plt.subplot(3,4,5)
+        plt.subplot(3, 4, 5)
         plt.title('Loc Heatmap Left')
         sns.heatmap(loc_maps[i][0])
-        plt.subplot(3,4,6)
+        plt.subplot(3, 4, 6)
         plt.title('Loc Heatmap Top')
         sns.heatmap(loc_maps[i][1])
-        plt.subplot(3,4,7)
+        plt.subplot(3, 4, 7)
         plt.title('Loc Heatmap Right')
         sns.heatmap(loc_maps[i][2])
-        plt.subplot(3,4,8)
+        plt.subplot(3, 4, 8)
         plt.title('Loc Heatmap Bottom')
         sns.heatmap(loc_maps[i][3])
 
-        plt.subplot(3,4,9)
+        plt.subplot(3, 4, 9)
         plt.title('Centerness Heatmap')
         sns.heatmap(center_maps[i])
 
-        plt.subplot(3,4,10)
+        plt.subplot(3, 4, 10)
         plt.title('Class Heatmap People')
         sns.heatmap(cls_maps[i][14])
 

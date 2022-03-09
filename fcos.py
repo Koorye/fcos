@@ -48,6 +48,8 @@ class FPN(nn.Module):
 
         self.smooth1 = nn.Conv2d(256,256,1)
         self.smooth2 = nn.Conv2d(256,256,1)
+        
+        self.apply(self.weight_init_)
     
     def forward(self, x):
         c3, c4, c5 = x
@@ -62,6 +64,12 @@ class FPN(nn.Module):
         p7 = self.down2(p6)
 
         return p3, p4, p5, p6, p7
+    
+    def weight_init_(self, layer):
+        if isinstance(layer, nn.Conv2d):
+            nn.init.xavier_uniform_(layer.weight)
+            if layer.bias is not None:
+                nn.init.constant_(layer.bias, 0)
 
 class Head(nn.Module):
     def __init__(self, n_classes):
@@ -70,20 +78,44 @@ class Head(nn.Module):
         self.n_classes = n_classes
         self.conv_cls = nn.Sequential(
             nn.Conv2d(256,256,1),
+            nn.GroupNorm(32, 256), 
+            nn.ReLU(inplace=True),
+
             nn.Conv2d(256,256,1),
+            nn.GroupNorm(32, 256), 
+            nn.ReLU(inplace=True),
+
             nn.Conv2d(256,256,1),
+            nn.GroupNorm(32, 256), 
+            nn.ReLU(inplace=True),
+
             nn.Conv2d(256,256,1),
+            nn.GroupNorm(32, 256), 
+            nn.ReLU(inplace=True),
         )
         self.conv_reg = nn.Sequential(
             nn.Conv2d(256,256,1),
+            nn.GroupNorm(32, 256), 
+            nn.ReLU(inplace=True),
+
             nn.Conv2d(256,256,1),
+            nn.GroupNorm(32, 256), 
+            nn.ReLU(inplace=True),
+
             nn.Conv2d(256,256,1),
+            nn.GroupNorm(32, 256), 
+            nn.ReLU(inplace=True),
+
             nn.Conv2d(256,256,1),
+            nn.GroupNorm(32, 256), 
+            nn.ReLU(inplace=True),
         )
 
         self.cls_branch = nn.Conv2d(256, self.n_classes, 1)
         self.center_branch = nn.Conv2d(256,1,1)
         self.reg_branch = nn.Conv2d(256,4,1)
+
+        self.apply(self.weight_init_)
     
     def forward(self, x):
         cls_f = self.conv_cls(x)
@@ -98,6 +130,12 @@ class Head(nn.Module):
         cls_map = cls_map.sigmoid()
 
         return loc_map, center_map, cls_map
+
+    def weight_init_(self, layer):
+        if isinstance(layer, nn.Conv2d):
+            nn.init.xavier_uniform_(layer.weight)
+            if layer.bias is not None:
+                nn.init.constant_(layer.bias, 0)
 
 class FCOS(nn.Module):
     def __init__(self, n_classes):
@@ -116,7 +154,7 @@ class FCOS(nn.Module):
         for feature in features:
             loc_map, center_map, cls_map = self.head(feature)
             loc_maps.append(loc_map)
-            center_maps.append(center_map)
+            center_maps.append(center_map.squeeze(1))
             cls_maps.append(cls_map)
         
         return loc_maps, center_maps, cls_maps
