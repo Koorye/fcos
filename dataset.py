@@ -1,3 +1,4 @@
+import math
 import numpy as np
 import torch
 from torch.utils.data import Dataset
@@ -43,8 +44,7 @@ class VOCDataset(Dataset):
         self.multi_scale = multi_scale
         self.center_sampling = center_sampling
 
-        # self.size = (800, 1024)
-        self.size = (384, 512)
+        self.size = (512, 800)
 
         self.trans = T.Compose([
             T.Resize(self.size),
@@ -78,7 +78,7 @@ class VOCDataset(Dataset):
             # (n_boxes,5)
             boxes_ = np.array(boxes)
             boxes_[:, 1:] = boxes_[:, 1:] / scale
-            boxes_ = boxes_.astype(int)
+            # boxes_ = boxes_.astype(int)
 
             loc_map, center_map, cls_map, mask = self._gen_heatmap(
                 boxes_, scale, self.m[idx], self.m[idx+1], self.radius)
@@ -140,10 +140,12 @@ class VOCDataset(Dataset):
 
         for box in boxes:
             cls, xmin, ymin, xmax, ymax = box
+            cls = int(cls)
 
             # 在heatmap大小的zero矩阵中填充一个box大小的矩形作为mask
             tmp_mask = np.zeros((h, w)).astype(int)
-            tmp_mask[ymin:ymax+1, xmin:xmax+1] = 1
+            tmp_mask[int(math.ceil(ymin)):int(math.floor(ymax))+1, 
+                     int(math.ceil(xmin)):int(math.floor(xmax))+1] = 1
 
             # 计算mask内的锚点相对于left/top/right/bottom的距离
             l = x - xmin

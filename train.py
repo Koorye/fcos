@@ -14,7 +14,7 @@ from utils import cls2onehot, heatmap2rgb, heatmaps2rgb, draw_boxes, decode_heat
 from cfg import scales, m
 
 
-batch_size = 4
+batch_size = 2
 show_every = 20
 lr = 1e-4
 epochs = 14
