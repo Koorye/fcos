@@ -1,4 +1,3 @@
-from turtle import forward
 import torch
 from torch import nn
 from torchvision.models import resnet50
@@ -67,7 +66,7 @@ class FPN(nn.Module):
     
     def weight_init_(self, layer):
         if isinstance(layer, nn.Conv2d):
-            nn.init.xavier_uniform_(layer.weight)
+            nn.init.kaiming_uniform_(layer.weight, a=1)
             if layer.bias is not None:
                 nn.init.constant_(layer.bias, 0)
 
@@ -117,7 +116,7 @@ class Head(nn.Module):
 
         self.apply(self.weight_init_)
     
-    def forward(self, x):
+    def forward(self, x, s):
         cls_f = self.conv_cls(x)
         reg_f = self.conv_reg(x)
 
@@ -125,7 +124,7 @@ class Head(nn.Module):
         center_map = self.center_branch(reg_f)
         loc_map = self.reg_branch(reg_f)
 
-        loc_map = torch.exp(loc_map)
+        loc_map = torch.exp(s*loc_map)
         center_map = center_map.sigmoid()
         cls_map = cls_map.sigmoid()
 
@@ -133,7 +132,7 @@ class Head(nn.Module):
 
     def weight_init_(self, layer):
         if isinstance(layer, nn.Conv2d):
-            nn.init.xavier_uniform_(layer.weight)
+            nn.init.normal_(layer.weight, std=.01)
             if layer.bias is not None:
                 nn.init.constant_(layer.bias, 0)
 
@@ -144,6 +143,8 @@ class FCOS(nn.Module):
         self.backbone = Backbone()
         self.fpn = FPN()
         self.head = Head(n_classes=n_classes)
+        
+        self.si = nn.Parameter(torch.ones(5).float())
     
     def forward(self, x):
         features = self.backbone(x)
@@ -151,8 +152,8 @@ class FCOS(nn.Module):
 
         loc_maps, center_maps, cls_maps = [], [], []
 
-        for feature in features:
-            loc_map, center_map, cls_map = self.head(feature)
+        for idx, feature in enumerate(features):
+            loc_map, center_map, cls_map = self.head(feature, self.si[idx])
             loc_maps.append(loc_map)
             center_maps.append(center_map.squeeze(1))
             cls_maps.append(cls_map)

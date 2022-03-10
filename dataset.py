@@ -11,13 +11,10 @@ class VOCDataset(Dataset):
     def __init__(self, 
                  base, 
                  scales=(8, 16, 32, 64, 128), 
-                 m=(0, 64, 128, 256, 512, np.inf), 
+                 m=(0, 32, 64, 128, 256, np.inf), 
                  radius=2,
                  multi_scale=True,
                  center_sampling=True):
-        """
-        
-        """
         super().__init__()
 
         self.base = base
@@ -28,7 +25,8 @@ class VOCDataset(Dataset):
         self.multi_scale = multi_scale
         self.center_sampling = center_sampling
 
-        self.size = (800, 1024)
+        # self.size = (800, 1024)
+        self.size = (384, 512)
 
         self.trans = T.Compose([
             T.Resize(self.size),
@@ -50,7 +48,7 @@ class VOCDataset(Dataset):
         boxes = self._parse_target_dict(target)
         img, boxes = self._resize_and_sort(img, boxes)
 
-        loc_maps, center_maps, cls_maps = [], [], []
+        loc_maps, center_maps, cls_maps, masks = [], [], [], []
         for idx, scale in enumerate(self.scales):
             # 将x,y根据sclae重置尺寸并取整
             # (n_boxes,5)
@@ -58,13 +56,14 @@ class VOCDataset(Dataset):
             boxes_[:, 1:] = boxes_[:, 1:] / scale
             boxes_ = boxes_.astype(int)
 
-            loc_map, center_map, cls_map = self._gen_heatmap(
+            loc_map, center_map, cls_map, mask = self._gen_heatmap(
                 boxes_, scale, self.m[idx], self.m[idx+1], self.radius)
             loc_maps.append(loc_map)
             center_maps.append(center_map)
             cls_maps.append(cls_map)
+            masks.append(mask)
 
-        return img, loc_maps, center_maps, cls_maps
+        return img, loc_maps, center_maps, cls_maps, masks
 
     def _parse_target_dict(self, target):
         """
@@ -152,7 +151,7 @@ class VOCDataset(Dataset):
             # 将当前box加入总mask中
             all_mask += tmp_mask
 
-            cls_map[cls, :, :] += tmp_mask.copy()
+            cls_map[cls, :, :] += tmp_mask.copy() * (cls+1)
 
             loc_map[0, :, :] += l * tmp_mask
             loc_map[1, :, :] += t * tmp_mask
@@ -170,9 +169,10 @@ class VOCDataset(Dataset):
 
         loc_map = torch.Tensor(loc_map)
         center_map = torch.Tensor(center_map).clamp(0.,1.)
-        cls_map = torch.Tensor(cls_map)
+        cls_map = torch.Tensor(cls_map).sum(0)
+        all_mask = torch.Tensor(all_mask).clamp(0,1).bool()
 
-        return loc_map, center_map, cls_map
+        return loc_map, center_map, cls_map, all_mask
 
 
 if __name__ == '__main__':
