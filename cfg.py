@@ -14,6 +14,9 @@ colors = [(random.randrange(0, 256),
            random.randrange(0, 256),
            random.randrange(0, 256)) for _ in range(len(classes))]
 
+# 图片的尺寸
+size = (512, 800)
+
 # 图片的缩放比例
 scales = (8, 16, 32, 64, 128)
 

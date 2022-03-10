@@ -11,7 +11,7 @@ from dataset import VOCDataset
 from fcos import FCOS
 from loss import Loss
 from utils import cls2onehot, heatmap2rgb, heatmaps2rgb, draw_boxes, decode_heatmaps
-from cfg import scales, m
+from cfg import scales, m, size
 
 
 batch_size = 2
@@ -27,10 +27,10 @@ torch.backends.cudnn.deterministic = True
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 print('Use device:', device)
 
-train_set = VOCDataset(root='data', train=True, scales=scales, m=m)
+train_set = VOCDataset(root='data', train=True, size=size, scales=scales, m=m)
 
 # 挑选了一张比较有特征的图片用来测试
-test_set = VOCDataset(root='data', train=False, scales=scales, m=m)
+test_set = VOCDataset(root='data', train=False, size=size, scales=scales, m=m)
 img_test, loc_maps_test, center_maps_test, cls_maps_test, _ = test_set[48]
 img_test = img_test.unsqueeze(0).to(device)
 

@@ -13,6 +13,7 @@ class VOCDataset(Dataset):
                  root,
                  download=False,
                  train=True,
+                 size=(512, 800),
                  scales=(8, 16, 32, 64, 128),
                  multi_scale=True,
                  m=(0, 32, 64, 128, 256, np.inf),
@@ -44,7 +45,7 @@ class VOCDataset(Dataset):
         self.multi_scale = multi_scale
         self.center_sampling = center_sampling
 
-        self.size = (512, 800)
+        self.size = size
 
         self.trans = T.Compose([
             T.Resize(self.size),
