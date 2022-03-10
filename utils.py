@@ -10,7 +10,10 @@ from cfg import classes, colors
 
 def cls2onehot(cls_map, n_clses):
     """
-    : param cls_map <tensor>: (n,) or (b,h,w)
+    将cls_map转换为one hot形式
+    : param cls_map <tensor>: (n,) or (h,w) or (b,h,w)
+    : param n_clses <int>: 类别数
+    : return <tensor>: (n,n_clses) or (n_clses,h,w) or (b,n_clses,h,w)
     """
     
     hw = False
@@ -40,7 +43,8 @@ def cls2onehot(cls_map, n_clses):
 @torch.no_grad()
 def heatmap2rgb(heatmap, theme='jet', normalize=False, scale=1.):
     """
-    : heatmap <tensor>: (h,w)
+    将二维heatmap转换为rgb图片
+    : param heatmap <tensor>: (h,w)
     : return <tensor>: (c,h,w)
     """
 
@@ -65,7 +69,8 @@ def heatmap2rgb(heatmap, theme='jet', normalize=False, scale=1.):
 @torch.no_grad()
 def heatmaps2rgb(heatmaps, theme='jet', normalize=False, scale=1.):
     """
-    : heatmaps <tensor>: (b,h,w)
+    将批量二维heatmap转换为rgb图片
+    : param heatmaps <tensor>: (b,h,w)
     : return <tensor>: (b,c,h,w)
     """
 
@@ -80,9 +85,15 @@ def heatmaps2rgb(heatmaps, theme='jet', normalize=False, scale=1.):
 @torch.no_grad()
 def decode_heatmap(loc_map, center_map, cls_map, scale, thresh=.1, use_nms=False, nms_thresh=.5):
     """
-    : loc_map <tensor>: (4,h,w)
-    : center_map <tensor>: (h,w)
-    : cls_map <tensor>: (n_classes,h,w) or (h,w)
+    将heatmap解码为预测框
+    : param loc_map <tensor>: (4,h,w)
+    : param center_map <tensor>: (h,w)
+    : param cls_map <tensor>: (n_classes,h,w) or (h,w)
+    : param scale <float>: 缩放比
+    : param thresh <float>: 大于阈值的置信度将被认为是预测框
+    : param use_nms <bool>: 是否使用nms
+    : param nms_thresh <float>: nms的IoU阈值
+    : return <tensor>: (n,6) -> cls,score,xmin,ymin,xmax,ymax
     """
 
     if len(cls_map.size()) == 2:
@@ -125,9 +136,17 @@ def decode_heatmap(loc_map, center_map, cls_map, scale, thresh=.1, use_nms=False
 
 
 @torch.no_grad()
-def decode_heatmaps(loc_maps, center_maps, cls_maps, scales, thresh=.2, use_nms=False, nms_thresh=.5):
+def decode_heatmaps(loc_maps, center_maps, cls_maps, scales, thresh=.1, use_nms=False, nms_thresh=.5):
     """
-    : loc_maps <list<tensor>>: [(4,h,w), ...]
+    将批量heatmap解码为预测框
+    : param loc_maps <list<tensor>>: [(4,h,w), ...]
+    : param center_map <list<tensor>>: [(h,w), ...]
+    : param cls_map <list<tensor>>: [(n_classes,h,w), ...] or [(h,w), ...]
+    : param scales <list<float>>: 每个heatmap的缩放比
+    : param thresh <float>: 大于阈值的置信度将被认为是预测框
+    : param use_nms <bool>: 是否使用nms
+    : param nms_thresh <float>: nms的IoU阈值
+    : return <tensor>: (n,6) -> cls,score,xmin,ymin,xmax,ymax
     """
 
     boxes = []
@@ -142,13 +161,12 @@ def decode_heatmaps(loc_maps, center_maps, cls_maps, scales, thresh=.2, use_nms=
             loc_map, center_map, cls_map, scales[i], thresh, use_nms, nms_thresh)
 
         if len(boxes_) > 0:
-            for box in boxes_:
-                boxes.append(box)
+            boxes.append(boxes_)
 
     if len(boxes) == 0:
         return torch.tensor(boxes)
 
-    boxes = torch.stack(boxes)
+    boxes = torch.cat(boxes)
 
     if use_nms:
         box_locs, box_scores = boxes[:, 2:], boxes[:, 1]
@@ -159,9 +177,16 @@ def decode_heatmaps(loc_maps, center_maps, cls_maps, scales, thresh=.2, use_nms=
 
 
 @torch.no_grad()
-def draw_boxes(img, boxes, show=False, untrans=None):
-    if untrans is not None:
-        img = untrans(img)
+def draw_boxes(img, boxes, show=False, trans=None):
+    """
+    : param img <tensor>: (c,h,w)
+    : param boxes <tensor>: (n,6)
+    : param show <bool>: 是否展示
+    : param untrans <torchvision.transforms>: 是否对图片进行转换
+    : return img <tensor>: (c,h,w)
+    """
+    if trans is not None:
+        img = trans(img)
 
     img = img.clone().detach().cpu().permute(1, 2, 0).numpy()
     if img.max() <= 1.:

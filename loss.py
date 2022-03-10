@@ -14,6 +14,7 @@ class LocLoss(nn.Module):
     
     def forward(self, loc_map_pred, loc_map_gt):
         """
+        回归损失，采用GIoU Loss
         : param loc_map_pred <tensor>: (n,4)
         : param loc_map_gt <tensor>: (n,4)
         """
@@ -50,9 +51,11 @@ class CenterLoss(nn.Module):
     
     def forward(self, center_map_pred, center_map_gt):
         """
+        中心度损失，采用BCE Loss
         : param center_map_pred <tensor>: (n,)
         : param center_map_gt <tensor>: (n,)
         """
+        
         return F.binary_cross_entropy(center_map_pred, center_map_gt, reduction='sum')
     
 class ClsLoss(nn.Module):
@@ -61,6 +64,7 @@ class ClsLoss(nn.Module):
     
     def forward(self, cls_map_pred, cls_map_gt):
         """
+        类别损失，采用Focal Loss
         : param cls_map_pred <tensor>: (n,n_classes)
         : param cls_map_gt <tensor>: (n,)
         """
@@ -88,6 +92,17 @@ class Loss(nn.Module):
     def forward(self, loc_maps_pred, loc_maps_gt, 
                 center_maps_pred, center_maps_gt, 
                 cls_maps_pred, cls_maps_gt, masks):
+        """
+        对所有预测值进行多尺度损失计算和汇总
+        : param loc_maps_pred <list<tensor>>: [(b,4,h,w), ...]
+        : param loc_maps_gt <list<tensor>>: [(b,4,h,w), ...]
+        : param center_maps_pred <list<tensor>>: [(b,h,w), ...]
+        : param center_maps_gt <list<tensor>>: [(b,h,w), ...]
+        : param cls_maps_pred <list<tensor>>: [(b,n_cls,h,w), ...]
+        : param cls_maps_gt <list<tensor>>: [(b,h,w), ...]
+        : param masks <list<tensor>>: [(b,h,w), ...]
+        : return <tuple<tensor>, <tensor>, <tensor>>: (1,), (1,), (1,) 回归、中心度、类别损失
+        """
         
         n_layers = len(loc_maps_pred)
         

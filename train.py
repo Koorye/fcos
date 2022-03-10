@@ -1,3 +1,4 @@
+from logging import root
 import torch
 from torch.optim import Adam
 from torch.optim.lr_scheduler import MultiStepLR
@@ -10,14 +11,14 @@ from dataset import VOCDataset
 from fcos import FCOS
 from loss import Loss
 from utils import cls2onehot, heatmap2rgb, heatmaps2rgb, draw_boxes, decode_heatmaps
-from cfg import scales
+from cfg import scales, m
 
 
 batch_size = 4
 show_every = 20
 lr = 1e-4
 epochs = 14
-history_weights = 'FCOS_epoch0_loss1.978462141752243.pth'
+history_weights = 'FCOS_epoch3_loss1.6426.pth'
 
 torch.backends.cudnn.enabled = True
 torch.backends.cudnn.benchmark = True
@@ -26,12 +27,10 @@ torch.backends.cudnn.deterministic = True
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 print('Use device:', device)
 
-train_set = VOCDataset(VOCDetection(
-    root='data', image_set='train', download=False), scales=scales)
+train_set = VOCDataset(root='data', train=True, scales=scales, m=m)
 
 # 挑选了一张比较有特征的图片用来测试
-test_set = VOCDataset(VOCDetection(
-    root='data', image_set='val', download=False))
+test_set = VOCDataset(root='data', train=False, scales=scales, m=m)
 img_test, loc_maps_test, center_maps_test, cls_maps_test, _ = test_set[48]
 img_test = img_test.unsqueeze(0).to(device)
 
@@ -55,13 +54,13 @@ viz = Visdom()
 viz.line([[0, 0, 0, 0]], [0], win='train_loss', opts=dict(
     title='Train Loss', legend=['total', 'loc', 'center', 'cls']))
 
-for ep in range(history_ep, epochs):
+for ep in range(history_ep+1, epochs+1):
 
     model.train()
     loc_loss_total, center_loss_total, cls_loss_total, count = 0., 0., 0., 0
 
     # 数据格式为列表，包含每一层的特征 -> (b,c,h,w)
-    for index, (imgs, loc_maps, center_maps, cls_maps, masks) in enumerate(tqdm(train_loader)):
+    for index, (imgs, loc_maps, center_maps, cls_maps, masks) in enumerate(tqdm(train_loader, desc=f'Epoch{ep}')):
         imgs = imgs.to(device)
 
         # 返回列表，包含每一层的回归结果 -> (b,c,h,w)
@@ -94,7 +93,7 @@ for ep in range(history_ep, epochs):
                        loc_loss_total/count,
                        center_loss_total/count,
                        cls_loss_total/count]],
-                     [ep*len(train_loader)+index], 'train_loss', update='append')
+                     [(ep-1)*len(train_loader)+index], 'train_loss', update='append')
             loc_loss_total, center_loss_total, cls_loss_total, count = 0., 0., 0., 0
 
             layer = 2
@@ -132,9 +131,9 @@ for ep in range(history_ep, epochs):
                                              cls_maps_test_pred,
                                              scales=scales,
                                              use_nms=True)
-                viz.image(draw_boxes(img_test[0], boxes_gt, untrans=train_set.untrans),
+                viz.image(draw_boxes(img_test[0], boxes_gt, trans=train_set.untrans),
                           win='box_gt', opts=dict(title='Box GT', width=500, height=400))
-                viz.image(draw_boxes(img_test[0], boxes_pred, untrans=train_set.untrans),
+                viz.image(draw_boxes(img_test[0], boxes_pred, trans=train_set.untrans),
                           win='box_pred', opts=dict(title='Box Pred', width=500, height=400))
 
     lr_scheduler.step()
@@ -144,6 +143,6 @@ for ep in range(history_ep, epochs):
         'model': model.state_dict(),
         'optim': optim.state_dict(),
         'lr_scheduler': lr_scheduler.state_dict(),
-    }, f'weights/FCOS_epoch{ep}_loss{final_loss}.pth')
+    }, f'weights/FCOS_epoch{ep}_loss{final_loss:.4f}.pth')
 
     torch.cuda.empty_cache()

@@ -8,16 +8,34 @@ from cfg import classes
 
 
 class VOCDataset(Dataset):
-    def __init__(self, 
-                 base, 
-                 scales=(8, 16, 32, 64, 128), 
-                 m=(0, 32, 64, 128, 256, np.inf), 
-                 radius=2,
+    def __init__(self,
+                 root,
+                 download=False,
+                 train=True,
+                 scales=(8, 16, 32, 64, 128),
                  multi_scale=True,
-                 center_sampling=True):
+                 m=(0, 32, 64, 128, 256, np.inf),
+                 center_sampling=True,
+                 radius=2):
+        """
+        : param root <str>: 数据集所在目录
+        : param download <bool>: 是否下载
+        : param train <bool>: 是否训练，false则代表测试
+        : param scales <tuple>: 所有缩放比例
+        : parma multi_scale <bool>: 是否根据最大回归距离分配不同特征层，false则所有特征层都分配
+        : param m <tuple>: 每种缩放比下的最大回归距离范围
+        : param center_sampling <bool>: 是否使用中心采样
+        : param radius <int>: 中心采样的半径
+        """
+
         super().__init__()
 
-        self.base = base
+        if train:
+            image_set = 'train'
+        else:
+            image_set = 'val'
+
+        self.base = VOCDetection(root, image_set=image_set, download=download)
         self.scales = scales
         self.m = m
         self.radius = radius
@@ -43,6 +61,12 @@ class VOCDataset(Dataset):
         return len(self.base)
 
     def __getitem__(self, idx):
+        """
+        : param idx <int>: 索引
+        : return <tuple<tensor>, list<<tensor>>, list<tensor>, list<tensor>, list<tensor>>: 
+          (c,h,w), [(4,h,w), ...], [(h,w), ...], [(h,w), ...], [(h,w), ...]
+        """
+
         img, target = self.base[idx]
         # (cls, xmin, ymin, xmax, ymax)
         boxes = self._parse_target_dict(target)
@@ -99,6 +123,10 @@ class VOCDataset(Dataset):
         return img, boxes
 
     def _gen_heatmap(self, boxes, scale, m_lb, m_ub, radius):
+        """
+        根据目标框、尺度等信息采样生成回归、分类、中心度特征图和正样本mask
+        """
+
         h, w = np.ceil(np.array(self.size) / scale).astype(int)
 
         loc_map = np.zeros((4, h, w)).astype(float)
@@ -138,7 +166,7 @@ class VOCDataset(Dataset):
 
             # 中心采样
             if self.center_sampling:
-                center_mask = np.zeros((h,w)).astype(int)
+                center_mask = np.zeros((h, w)).astype(int)
                 xc, yc = int((xmin + xmax) / 2), int((ymin + ymax) / 2)
                 center_mask[yc-radius:yc+radius+1, xc-radius:xc+radius+1] = 1
                 tmp_mask *= center_mask
@@ -168,9 +196,9 @@ class VOCDataset(Dataset):
                                   min_tb*inv_max_tb) * tmp_mask
 
         loc_map = torch.Tensor(loc_map)
-        center_map = torch.Tensor(center_map).clamp(0.,1.)
+        center_map = torch.Tensor(center_map).clamp(0., 1.)
         cls_map = torch.Tensor(cls_map).sum(0)
-        all_mask = torch.Tensor(all_mask).clamp(0,1).bool()
+        all_mask = torch.Tensor(all_mask).clamp(0, 1).bool()
 
         return loc_map, center_map, cls_map, all_mask
 
